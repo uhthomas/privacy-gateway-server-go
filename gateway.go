@@ -24,10 +24,12 @@ type gatewayResource struct {
 }
 
 const (
-	ohttpRequestContentType  = "message/ohttp-req"
-	ohttpResponseContentType = "message/ohttp-res"
-	twelveHours              = 12 * 3600
-	twentyFourHours          = 24 * 3600
+	ohttpRequestContentType         = "message/ohttp-req"
+	ohttpResponseContentType        = "message/ohttp-res"
+	ohttpChunkedRequestContentType  = "message/ohttp-chunked-req"
+	ohttpChunkedResponseContentType = "message/ohttp-chunked-res"
+	twelveHours                     = 12 * 3600
+	twentyFourHours                 = 24 * 3600
 
 	// Metrics constants
 	metricsEventGatewayRequest      = "gateway_request"
@@ -62,12 +64,20 @@ func (s *gatewayResource) gatewayHandler(w http.ResponseWriter, r *http.Request)
 		s.httpError(w, http.StatusBadRequest, fmt.Sprintf("Invalid method: %s", r.Method), metrics, r.Method)
 		return
 	}
-	if r.Header.Get("Content-Type") != ohttpRequestContentType {
-		metrics.Fire(metricsResultInvalidContentType)
-		s.httpError(w, http.StatusBadRequest, fmt.Sprintf("Invalid content type: %s", r.Header.Get("Content-Type")), metrics, r.Method)
-		return
+
+	switch r.Header.Get("Content-Type") {
+	case ohttpRequestContentType:
+		s.ohttpGatewayHandler(w, r, metrics)
+	case ohttpChunkedRequestContentType:
+		s.ohttpChunkedGatewayHandler(w, r, metrics)
 	}
 
+	metrics.Fire(metricsResultInvalidContentType)
+	s.httpError(w, http.StatusBadRequest, fmt.Sprintf("Invalid content type: %s", r.Header.Get("Content-Type")), metrics, r.Method)
+
+}
+
+func (s *gatewayResource) ohttpGatewayHandler(w http.ResponseWriter, r *http.Request, metrics Metrics) {
 	var encapHandler EncapsulationHandler
 	var ok bool
 	if encapHandler, ok = s.encapsulationHandlers[r.URL.Path]; !ok {
@@ -107,6 +117,10 @@ func (s *gatewayResource) gatewayHandler(w http.ResponseWriter, r *http.Request)
 	w.Header().Set("Connection", "Keep-Alive")
 	w.Write(packedResponse)
 	metrics.ResponseStatus(r.Method, http.StatusOK)
+}
+
+func (s *gatewayResource) ohttpChunkedGatewayHandler(w http.ResponseWriter, r *http.Request, metrics Metrics) {
+	_, _, _ = w, r, metrics
 }
 
 func (s *gatewayResource) legacyConfigHandler(w http.ResponseWriter, r *http.Request) {
