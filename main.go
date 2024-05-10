@@ -115,7 +115,7 @@ func getBoolEnv(key string, defaultVal bool) bool {
 	return ret
 }
 
-func getStringEnv(key string, defaultVal string) string {
+func getStringEnv(key, defaultVal string) string {
 	val := os.Getenv(key)
 	if val == "" {
 		return defaultVal

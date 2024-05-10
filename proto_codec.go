@@ -59,7 +59,7 @@ func requestToProtoHTTP(request *http.Request) (*Request, error) {
 	req.Headers = []*HeaderNameValue{}
 	for name, value := range request.Header {
 		for _, val := range value {
-			var nv = new(HeaderNameValue)
+			nv := new(HeaderNameValue)
 			nv.Name = name
 			nv.Value = val
 			req.Headers = append(req.Headers, nv)
@@ -126,7 +126,7 @@ func responseToProtoHTTP(targetResponse *http.Response) (*Response, error) {
 	responseHeaders := []*HeaderNameValue{}
 	for name, value := range targetResponse.Header {
 		for _, val := range value {
-			var nv = new(HeaderNameValue)
+			nv := new(HeaderNameValue)
 			nv.Name = name
 			nv.Value = val
 			responseHeaders = append(responseHeaders, nv)

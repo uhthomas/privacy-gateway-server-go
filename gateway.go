@@ -74,7 +74,6 @@ func (s *gatewayResource) gatewayHandler(w http.ResponseWriter, r *http.Request)
 
 	metrics.Fire(metricsResultInvalidContentType)
 	s.httpError(w, http.StatusBadRequest, fmt.Sprintf("Invalid content type: %s", r.Header.Get("Content-Type")), metrics, r.Method)
-
 }
 
 func (s *gatewayResource) ohttpGatewayHandler(w http.ResponseWriter, r *http.Request, metrics Metrics) {

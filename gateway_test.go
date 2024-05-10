@@ -224,7 +224,7 @@ func testBodyContainsError(t *testing.T, resp *http.Response, expectedText strin
 	}
 }
 
-func testMetricsContainsResult(t *testing.T, metricsCollector *MockMetricsFactory, event string, result string) {
+func testMetricsContainsResult(t *testing.T, metricsCollector *MockMetricsFactory, event, result string) {
 	for _, metric := range metricsCollector.metrics {
 		if metric.eventName == event {
 			_, exists := metric.resultLabels[result]

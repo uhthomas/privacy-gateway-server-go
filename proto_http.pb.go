@@ -187,7 +187,8 @@ func (x *HeaderNameValue) GetValue() string {
 }
 
 // A simplified Known Length Request, inspired by Binary HTTP:
-//   https://datatracker.ietf.org/doc/html/draft-ietf-httpbis-binary-message#section-3.1
+//
+//	https://datatracker.ietf.org/doc/html/draft-ietf-httpbis-binary-message#section-3.1
 type Request struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
@@ -287,7 +288,8 @@ func (x *Request) GetPadding() []byte {
 }
 
 // A simplified Known Length Response, inspired by Binary HTTP:
-//   https://datatracker.ietf.org/doc/html/draft-ietf-httpbis-binary-message#section-3.1
+//
+//	https://datatracker.ietf.org/doc/html/draft-ietf-httpbis-binary-message#section-3.1
 type Response struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
