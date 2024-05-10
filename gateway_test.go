@@ -86,7 +86,7 @@ func mustGetMetricsFactory(t *testing.T, gateway gatewayResource) *MockMetricsFa
 func (h ForbiddenCheckHttpRequestHandler) Handle(req *http.Request, metrics Metrics) (*http.Response, error) {
 	if req.Host == h.forbidden {
 		metrics.Fire(metricsResultTargetRequestForbidden)
-		return nil, GatewayTargetForbiddenError
+		return nil, ErrGatewayTargetForbidden
 	}
 
 	metrics.Fire(metricsResultSuccess)

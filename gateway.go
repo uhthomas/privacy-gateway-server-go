@@ -5,7 +5,7 @@ package main
 
 import (
 	"fmt"
-	"io/ioutil"
+	"io"
 	"log"
 	"math/rand"
 	"net/http"
@@ -80,32 +80,32 @@ func (s *gatewayResource) ohttpGatewayHandler(w http.ResponseWriter, r *http.Req
 	var encapHandler EncapsulationHandler
 	var ok bool
 	if encapHandler, ok = s.encapsulationHandlers[r.URL.Path]; !ok {
-		s.httpError(w, http.StatusBadRequest, fmt.Sprintf("Unknown handler"), metrics, r.Method)
+		s.httpError(w, http.StatusBadRequest, "Unknown handler", metrics, r.Method)
 		return
 	}
 
 	defer r.Body.Close()
-	encryptedMessageBytes, err := ioutil.ReadAll(r.Body)
+	encryptedMessageBytes, err := io.ReadAll(r.Body)
 	if err != nil {
 		metrics.Fire(metricsResultInvalidContent)
-		s.httpError(w, http.StatusBadRequest, fmt.Sprintf("Reading request body failed"), metrics, r.Method)
+		s.httpError(w, http.StatusBadRequest, "Reading request body failed", metrics, r.Method)
 		return
 	}
 
 	encapsulatedReq, err := ohttp.UnmarshalEncapsulatedRequest(encryptedMessageBytes)
 	if err != nil {
 		metrics.Fire(metricsResultInvalidContent)
-		s.httpError(w, http.StatusBadRequest, fmt.Sprintf("Reading request body failed"), metrics, r.Method)
+		s.httpError(w, http.StatusBadRequest, "Reading request body failed", metrics, r.Method)
 		return
 	}
 
 	encapsulatedResp, err := encapHandler.Handle(r, encapsulatedReq, metrics)
 	if err != nil {
 		if s.verbose {
-			log.Printf(err.Error())
+			log.Print(err.Error())
 		}
 
-		errorCode := encapsulationErrorToGatewayStatusCode(err)
+		errorCode := ErrEncapsulationToGatewayStatusCode(err)
 		s.httpError(w, errorCode, http.StatusText(errorCode), metrics, r.Method)
 		return
 	}

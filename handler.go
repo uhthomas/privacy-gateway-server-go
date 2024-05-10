@@ -20,26 +20,26 @@ import (
 // https://ietf-wg-ohai.github.io/oblivious-http/draft-ietf-ohai-ohttp.html#name-errors:
 
 // 401 - Unauthorized in Gateway response
-var ConfigMismatchError = errors.New("Configuration mismatch")
+var ErrConfigMismatch = errors.New("configuration mismatch")
 
 // 400 - BadRequest in Gateway response
-var EncapsulationError = errors.New("Encapsulation error")
+var ErrEncapsulation = errors.New("encapsulation error")
 
 // 400 - BadRequest in Payload response. Payload is not a valid protobuf or marshalling error.
-var PayloadMarshallingError = errors.New("Issues with payload marshalling (BHTTP or Protobuf)")
+var ErrPayloadMarshalling = errors.New("issues with payload marshalling (BHTTP or Protobuf)")
 
 // 403 - Forbidden in Payload response. The request is not allowed to be sent to the target.
-var GatewayTargetForbiddenError = errors.New("Target forbidden on gateway (request was blocked by gateway)")
+var ErrGatewayTargetForbidden = errors.New("target forbidden on gateway (request was blocked by gateway)")
 
 // 500 - Internal server error in Payload response. The request failed to be processed after decapsulation.
-var GatewayInternalServerError = errors.New("The request failed to be processed after decapsulation")
+var ErrGatewayInternalServer = errors.New("the request failed to be processed after decapsulation")
 
 // Errors happened during decapsulation/encapsulation are returned as gateway response's error status (401 and 400)
-func encapsulationErrorToGatewayStatusCode(e error) int {
+func ErrEncapsulationToGatewayStatusCode(e error) int {
 	switch e {
-	case ConfigMismatchError:
+	case ErrConfigMismatch:
 		return http.StatusUnauthorized
-	case EncapsulationError:
+	case ErrEncapsulation:
 		return http.StatusBadRequest
 	default:
 		return http.StatusBadRequest
@@ -49,11 +49,11 @@ func encapsulationErrorToGatewayStatusCode(e error) int {
 // Errors happened after decapsulation are returned as encapsulated payload errors while gatewy status is 200
 func payloadErrorToPayloadStatusCode(e error) int {
 	switch e {
-	case PayloadMarshallingError:
+	case ErrPayloadMarshalling:
 		return http.StatusBadRequest
-	case GatewayTargetForbiddenError:
+	case ErrGatewayTargetForbidden:
 		return http.StatusForbidden
-	case GatewayInternalServerError:
+	case ErrGatewayInternalServer:
 		return http.StatusInternalServerError
 	default:
 		return 400
@@ -101,13 +101,13 @@ type DefaultEncapsulationHandler struct {
 func (h DefaultEncapsulationHandler) Handle(outerRequest *http.Request, encapsulatedReq ohttp.EncapsulatedRequest, metrics Metrics) (ohttp.EncapsulatedResponse, error) {
 	if !h.gateway.MatchesConfig(encapsulatedReq) {
 		metrics.Fire(metricsResultConfigurationMismatch)
-		return EncapsulationFail(ConfigMismatchError)
+		return EncapsulationFail(ErrConfigMismatch)
 	}
 
 	binaryRequest, context, err := h.gateway.DecapsulateRequest(encapsulatedReq)
 	if err != nil {
 		metrics.Fire(metricsResultDecapsulationFailed)
-		return EncapsulationFail(EncapsulationError)
+		return EncapsulationFail(ErrEncapsulation)
 	}
 
 	binaryResponse, err := h.appHandler.Handle(binaryRequest, metrics)
@@ -118,7 +118,7 @@ func (h DefaultEncapsulationHandler) Handle(outerRequest *http.Request, encapsul
 	encapsulatedResponse, err := context.EncapsulateResponse(binaryResponse)
 	if err != nil {
 		metrics.Fire(metricsResultEncapsulationFailed)
-		return EncapsulationFail(EncapsulationError)
+		return EncapsulationFail(ErrEncapsulation)
 	}
 
 	return encapsulatedResponse, nil
@@ -136,26 +136,26 @@ type MetadataEncapsulationHandler struct {
 func (h MetadataEncapsulationHandler) Handle(outerRequest *http.Request, encapsulatedReq ohttp.EncapsulatedRequest, metrics Metrics) (ohttp.EncapsulatedResponse, error) {
 	if !h.gateway.MatchesConfig(encapsulatedReq) {
 		metrics.Fire(metricsResultConfigurationMismatch)
-		return EncapsulationFail(ConfigMismatchError)
+		return EncapsulationFail(ErrConfigMismatch)
 	}
 
 	_, context, err := h.gateway.DecapsulateRequest(encapsulatedReq)
 	if err != nil {
 		metrics.Fire(metricsResultDecapsulationFailed)
-		return EncapsulationFail(EncapsulationError)
+		return EncapsulationFail(ErrEncapsulation)
 	}
 
 	// XXX(caw): maybe also include the encapsulated request and its plaintext form too?
 	binaryResponse, err := httputil.DumpRequest(outerRequest, false)
 	if err != nil {
 		// Note: we don't record an event for this as it's not necessary to track
-		return EncapsulationFail(GatewayInternalServerError)
+		return EncapsulationFail(ErrGatewayInternalServer)
 	}
 
 	encapsulatedResponse, err := context.EncapsulateResponse(binaryResponse)
 	if err != nil {
 		metrics.Fire(metricsResultEncapsulationFailed)
-		return EncapsulationFail(EncapsulationError)
+		return EncapsulationFail(ErrEncapsulation)
 	}
 
 	metrics.Fire(metricsResultSuccess)
@@ -205,35 +205,35 @@ func (h ProtoHTTPAppHandler) Handle(binaryRequest []byte, metrics Metrics) ([]by
 	req := &Request{}
 	if err := proto.Unmarshal(binaryRequest, req); err != nil {
 		metrics.Fire(metricsResultContentDecodingFailed)
-		return h.wrappedError(PayloadMarshallingError, metrics)
+		return h.wrappedError(ErrPayloadMarshalling, metrics)
 	}
 
 	httpRequest, err := protoHTTPToRequest(req)
 	if err != nil {
 		metrics.Fire(metricsResultRequestTranslationFailed)
-		return h.wrappedError(PayloadMarshallingError, metrics)
+		return h.wrappedError(ErrPayloadMarshalling, metrics)
 	}
 
 	httpResponse, err := h.httpHandler.Handle(httpRequest, metrics)
 	if err != nil {
-		if err == GatewayTargetForbiddenError {
+		if err == ErrGatewayTargetForbidden {
 			// Return 403 (Forbidden) in the event the client request was for a
 			// Target not on the allow list
-			return h.wrappedError(GatewayTargetForbiddenError, metrics)
+			return h.wrappedError(ErrGatewayTargetForbidden, metrics)
 		}
-		return h.wrappedError(GatewayInternalServerError, metrics)
+		return h.wrappedError(ErrGatewayInternalServer, metrics)
 	}
 
 	protoResponse, err := responseToProtoHTTP(httpResponse)
 	if err != nil {
 		metrics.Fire(metricsResultResponseTranslationFailed)
-		return h.wrappedError(PayloadMarshallingError, metrics)
+		return h.wrappedError(ErrPayloadMarshalling, metrics)
 	}
 
 	marshalledProtoResponse, err := proto.Marshal(protoResponse)
 	if err != nil {
 		metrics.Fire(metricsResultContentEncodingFailed)
-		return h.wrappedError(PayloadMarshallingError, metrics)
+		return h.wrappedError(ErrPayloadMarshalling, metrics)
 	}
 	metrics.Fire(metricsPayloadStatusPrefix + "200")
 	var r error = nil
@@ -265,24 +265,24 @@ func (h BinaryHTTPAppHandler) Handle(binaryRequest []byte, metrics Metrics) ([]b
 	req, err := ohttp.UnmarshalBinaryRequest(binaryRequest)
 	if err != nil {
 		metrics.Fire(metricsResultContentDecodingFailed)
-		return h.wrappedError(PayloadMarshallingError, metrics)
+		return h.wrappedError(ErrPayloadMarshalling, metrics)
 	}
 
 	resp, err := h.httpHandler.Handle(req, metrics)
 	if err != nil {
-		if err == GatewayTargetForbiddenError {
+		if err == ErrGatewayTargetForbidden {
 			// Return 403 (Forbidden) in the event the client request was for a
 			// Target not on the allow list
-			return h.wrappedError(GatewayTargetForbiddenError, metrics)
+			return h.wrappedError(ErrGatewayTargetForbidden, metrics)
 		}
-		return h.wrappedError(GatewayInternalServerError, metrics)
+		return h.wrappedError(ErrGatewayInternalServer, metrics)
 	}
 
 	binaryResp := ohttp.CreateBinaryResponse(resp)
 	binaryRespEnc, err := binaryResp.Marshal()
 	if err != nil {
 		metrics.Fire(metricsResultContentEncodingFailed)
-		return h.wrappedError(PayloadMarshallingError, metrics)
+		return h.wrappedError(ErrPayloadMarshalling, metrics)
 	}
 
 	metrics.Fire(metricsPayloadStatusPrefix + "200")
@@ -315,7 +315,7 @@ func (h FilteredHttpRequestHandler) Handle(req *http.Request, metrics Metrics) (
 				// to allow clients to fix improper third party urls usage (e.g. to change URLs from our direct s3 refs to CDN)
 				log.Printf("TargetForbiddenError: %s, %s", req.Host, req.URL)
 			}
-			return nil, GatewayTargetForbiddenError
+			return nil, ErrGatewayTargetForbidden
 		}
 	}
 

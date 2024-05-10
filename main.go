@@ -60,11 +60,10 @@ const (
 )
 
 type gatewayServer struct {
-	requestLabel   string
-	responseLabel  string
-	endpoints      map[string]string
-	target         *gatewayResource
-	metricsFactory MetricsFactory
+	requestLabel  string
+	responseLabel string
+	endpoints     map[string]string
+	target        *gatewayResource
 }
 
 func (s gatewayServer) formatConfiguration(w io.Writer) {

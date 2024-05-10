@@ -81,11 +81,11 @@ func protoHTTPToRequest(request *Request) (*http.Request, error) {
 	var ok bool
 	var method string
 	if method, ok = requestMethodMap[request.Method]; !ok {
-		return nil, fmt.Errorf("Unsupported request method: %s", request.Method)
+		return nil, fmt.Errorf("unsupported request method: %s", request.Method)
 	}
 	var scheme string
 	if scheme, ok = requestSchemeMap[request.Scheme]; !ok {
-		return nil, fmt.Errorf("Unsupported request scheme: %s", request.Scheme)
+		return nil, fmt.Errorf("unsupported request scheme: %s", request.Scheme)
 	}
 
 	authority := request.Authority
