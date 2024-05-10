@@ -6,7 +6,7 @@ package main
 import (
 	"bytes"
 	"errors"
-	"io/ioutil"
+	"io"
 	"log"
 	"net/http"
 	"net/http/httputil"
@@ -236,8 +236,7 @@ func (h ProtoHTTPAppHandler) Handle(binaryRequest []byte, metrics Metrics) ([]by
 		return h.wrappedError(ErrPayloadMarshalling, metrics)
 	}
 	metrics.Fire(metricsPayloadStatusPrefix + "200")
-	var r error = nil
-	return marshalledProtoResponse, r
+	return marshalledProtoResponse, nil
 }
 
 // BinaryHTTPAppHandler is an AppContentHandler that parses the application request as
@@ -250,7 +249,7 @@ func (h BinaryHTTPAppHandler) wrappedError(e error, metrics Metrics) ([]byte, er
 	status := payloadErrorToPayloadStatusCode(e)
 	resp := &http.Response{
 		StatusCode: status,
-		Body:       ioutil.NopCloser(bytes.NewBufferString(e.Error())),
+		Body:       io.NopCloser(bytes.NewBufferString(e.Error())),
 	}
 	binaryResponse := ohttp.CreateBinaryResponse(resp)
 	metrics.Fire(metricsPayloadStatusPrefix + strconv.Itoa(status))
@@ -286,8 +285,7 @@ func (h BinaryHTTPAppHandler) Handle(binaryRequest []byte, metrics Metrics) ([]b
 	}
 
 	metrics.Fire(metricsPayloadStatusPrefix + "200")
-	var r error = nil
-	return binaryRespEnc, r
+	return binaryRespEnc, nil
 }
 
 // HttpRequestHandler handles HTTP requests to produce responses.
