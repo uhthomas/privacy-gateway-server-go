@@ -68,8 +68,8 @@ func (s *gatewayResource) gatewayHandler(w http.ResponseWriter, r *http.Request)
 	switch r.Header.Get("Content-Type") {
 	case ohttpRequestContentType:
 		s.ohttpGatewayHandler(w, r, metrics)
-	case ohttpChunkedRequestContentType:
-		s.ohttpChunkedGatewayHandler(w, r, metrics)
+		// case ohttpChunkedRequestContentType:
+		// 	s.ohttpChunkedGatewayHandler(w, r, metrics)
 	}
 
 	metrics.Fire(metricsResultInvalidContentType)
@@ -77,15 +77,14 @@ func (s *gatewayResource) gatewayHandler(w http.ResponseWriter, r *http.Request)
 }
 
 func (s *gatewayResource) ohttpGatewayHandler(w http.ResponseWriter, r *http.Request, metrics Metrics) {
-	var encapHandler EncapsulationHandler
-	var ok bool
-	if encapHandler, ok = s.encapsulationHandlers[r.URL.Path]; !ok {
+	encapHandler, ok := s.encapsulationHandlers[r.URL.Path]
+	if !ok {
 		s.httpError(w, http.StatusBadRequest, "Unknown handler", metrics, r.Method)
 		return
 	}
 
-	defer r.Body.Close()
-	encryptedMessageBytes, err := io.ReadAll(r.Body)
+	// Limit request body size to 100MB.
+	encryptedMessageBytes, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 100<<20))
 	if err != nil {
 		metrics.Fire(metricsResultInvalidContent)
 		s.httpError(w, http.StatusBadRequest, "Reading request body failed", metrics, r.Method)
@@ -112,15 +111,15 @@ func (s *gatewayResource) ohttpGatewayHandler(w http.ResponseWriter, r *http.Req
 
 	packedResponse := encapsulatedResp.Marshal()
 
-	w.Header().Set("Content-Type", ohttpResponseContentType)
+	w.Header().Set("Content-Type", ohttpChunkedResponseContentType)
 	w.Header().Set("Connection", "Keep-Alive")
 	w.Write(packedResponse)
 	metrics.ResponseStatus(r.Method, http.StatusOK)
 }
 
-func (s *gatewayResource) ohttpChunkedGatewayHandler(w http.ResponseWriter, r *http.Request, metrics Metrics) {
-	_, _, _ = w, r, metrics
-}
+// func (s *gatewayResource) ohttpChunkedGatewayHandler(w http.ResponseWriter, r *http.Request, metrics Metrics) {
+// 	_, _, _ = w, r, metrics
+// }
 
 func (s *gatewayResource) legacyConfigHandler(w http.ResponseWriter, r *http.Request) {
 	if s.verbose {

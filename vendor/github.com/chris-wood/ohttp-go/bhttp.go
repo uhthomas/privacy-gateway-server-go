@@ -53,9 +53,9 @@ func UnmarshalFrameIndicator(b io.ByteReader) (frameIndicator, error) {
 	return frameIndicator(val), nil
 }
 
-func encodeVarintSlice(b *bytes.Buffer, data []byte) {
-	Write(b, uint64(len(data)))
-	b.Write([]byte(data))
+func encodeVarintSlice(w io.Writer, data []byte) {
+	Write(w, uint64(len(data)))
+	w.Write([]byte(data))
 }
 
 func readVarintSlice(b *bytes.Buffer) ([]byte, error) {
@@ -510,6 +510,84 @@ func (r *BinaryResponse) Marshal() ([]byte, error) {
 	encodeVarintSlice(b, trailerFields.Marshal())
 
 	return b.Bytes(), nil
+}
+
+// func (r *BinaryResponse) Marshal() ([]byte, error) {
+// 	var buf bytes.Buffer
+// 	if err := r.Write(&buf); err != nil {
+// 		return nil, err
+// 	}
+// 	return buf.Bytes(), nil
+// }
+
+// func (r *BinaryResponse) MarshalHeader() ([]byte, error) {
+// 	var buf bytes.Buffer
+
+// 	// Framing
+// 	buf.Write(knownLengthResponseFrame.Marshal())
+
+// 	// TODO(caw): if the response is informational (100..199), encode it in an infrmational response code
+// 	if r.StatusCode < 200 || r.StatusCode > 599 {
+// 		return nil, errInformationalNotSupported
+// 	}
+
+// 	// Response control data
+// 	controlData := finalResponseControlData{r.StatusCode}
+// 	buf.Write(controlData.Marshal())
+
+// 	// Header fields
+// 	headerFields := responseHeaderFields(r)
+// 	encodeVarintSlice(&buf, headerFields.Marshal())
+// 	return buf.Bytes(), nil
+// }
+
+// func (r *BinaryResponse) MarshalTrailer() ([]byte, error) {
+// 	var buf bytes.Buffer
+// 	trailerFields := responseTrailerFields(r)
+// 	encodeVarintSlice(&buf, trailerFields.Marshal())
+// 	return buf.Bytes(), nil
+// }
+
+func (r *BinaryResponse) Write(w io.Writer) error {
+	// Framing
+	w.Write(knownLengthResponseFrame.Marshal())
+
+	// TODO(caw): if the response is informational (100..199), encode it in an infrmational response code
+	if r.StatusCode < 200 || r.StatusCode > 599 {
+		return errInformationalNotSupported
+	}
+
+	// Response control data
+	controlData := finalResponseControlData{r.StatusCode}
+	w.Write(controlData.Marshal())
+
+	// Header fields
+	headerFields := responseHeaderFields(r)
+	headerFields.fields = append(headerFields.fields, field{name: "Transfer-Encoding", value: "chunked"})
+	encodeVarintSlice(w, headerFields.Marshal())
+
+	if r.Body != nil {
+		var b [32 << 10]byte
+		for {
+			n, err := r.Body.Read(b[:])
+			if err != nil {
+				if err == io.EOF {
+					break
+				}
+				return err
+			}
+
+			encodeVarintSlice(w, b[:n])
+		}
+	} else {
+		encodeVarintSlice(w, nil)
+	}
+
+	// Trailer fields
+	trailerFields := responseTrailerFields(r)
+	encodeVarintSlice(w, trailerFields.Marshal())
+
+	return nil
 }
 
 func UnmarshalBinaryResponse(data []byte) (*http.Response, error) {

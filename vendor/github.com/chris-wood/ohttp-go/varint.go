@@ -66,15 +66,15 @@ func Read(b io.ByteReader) (uint64, error) {
 }
 
 // Write writes a number in the QUIC varint format
-func Write(b *bytes.Buffer, i uint64) {
+func Write(w io.Writer, i uint64) {
 	if i <= maxVarInt1 {
-		b.WriteByte(uint8(i))
+		w.Write([]byte{uint8(i)})
 	} else if i <= maxVarInt2 {
-		b.Write([]byte{uint8(i>>8) | 0x40, uint8(i)})
+		w.Write([]byte{uint8(i>>8) | 0x40, uint8(i)})
 	} else if i <= maxVarInt4 {
-		b.Write([]byte{uint8(i>>24) | 0x80, uint8(i >> 16), uint8(i >> 8), uint8(i)})
+		w.Write([]byte{uint8(i>>24) | 0x80, uint8(i >> 16), uint8(i >> 8), uint8(i)})
 	} else if i <= maxVarInt8 {
-		b.Write([]byte{
+		w.Write([]byte{
 			uint8(i>>56) | 0xc0, uint8(i >> 48), uint8(i >> 40), uint8(i >> 32),
 			uint8(i >> 24), uint8(i >> 16), uint8(i >> 8), uint8(i),
 		})

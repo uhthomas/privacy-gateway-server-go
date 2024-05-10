@@ -4,16 +4,13 @@
 package main
 
 import (
-	"bytes"
 	"errors"
 	"io"
 	"log"
 	"net/http"
 	"net/http/httputil"
-	"strconv"
 
 	"github.com/chris-wood/ohttp-go"
-	"google.golang.org/protobuf/proto"
 )
 
 // Description of the error handling in the specification:
@@ -110,8 +107,9 @@ func (h DefaultEncapsulationHandler) Handle(outerRequest *http.Request, encapsul
 		return EncapsulationFail(ErrEncapsulation)
 	}
 
-	binaryResponse, err := h.appHandler.Handle(binaryRequest, metrics)
-	if err != nil {
+	e := NewEncapsulatedChunkWriter(w)
+
+	if err := h.appHandler.Handle(e, binaryRequest, metrics); err != nil {
 		return EncapsulationFail(err)
 	}
 
@@ -164,80 +162,80 @@ func (h MetadataEncapsulationHandler) Handle(outerRequest *http.Request, encapsu
 
 // AppContentHandler processes application-specific request content and produces response content.
 type AppContentHandler interface {
-	Handle(binaryRequest []byte, metrics Metrics) ([]byte, error)
+	Handle(e *EncapsulatedChunkWriter, binaryRequest []byte, metrics Metrics) error
 }
 
-// EchoAppHandler is an AppContentHandler that returns the application request as the response.
-type EchoAppHandler struct{}
+// // EchoAppHandler is an AppContentHandler that returns the application request as the response.
+// type EchoAppHandler struct{}
 
-// Handle returns the input request as the response.
-func (h EchoAppHandler) Handle(binaryRequest []byte, metrics Metrics) ([]byte, error) {
-	metrics.Fire(metricsResultSuccess)
-	return binaryRequest, nil
-}
+// // Handle returns the input request as the response.
+// func (h EchoAppHandler) Handle(binaryRequest []byte, metrics Metrics) ([]byte, error) {
+// 	metrics.Fire(metricsResultSuccess)
+// 	return binaryRequest, nil
+// }
 
-// ProtoHTTPAppHandler is an AppContentHandler that parses the application request as
-// a protobuf-based HTTP request for resolution with an HttpRequestHandler.
-type ProtoHTTPAppHandler struct {
-	httpHandler HttpRequestHandler
-}
+// // ProtoHTTPAppHandler is an AppContentHandler that parses the application request as
+// // a protobuf-based HTTP request for resolution with an HttpRequestHandler.
+// type ProtoHTTPAppHandler struct {
+// 	httpHandler HttpRequestHandler
+// }
 
-// returns the same object format as for PayloadSuccess moving error inside successful response
-func (h ProtoHTTPAppHandler) wrappedError(e error, metrics Metrics) ([]byte, error) {
-	status := payloadErrorToPayloadStatusCode(e)
-	resp := &Response{
-		StatusCode: int32(status),
-		Body:       []byte(e.Error()),
-	}
-	respEnc, err := proto.Marshal(resp)
-	if err != nil {
-		return nil, err
-	}
-	metrics.ResponseStatus(metricsPayloadStatusPrefix, status)
-	return respEnc, nil
-}
+// // returns the same object format as for PayloadSuccess moving error inside successful response
+// func (h ProtoHTTPAppHandler) wrappedError(e error, metrics Metrics) ([]byte, error) {
+// 	status := payloadErrorToPayloadStatusCode(e)
+// 	resp := &Response{
+// 		StatusCode: int32(status),
+// 		Body:       []byte(e.Error()),
+// 	}
+// 	respEnc, err := proto.Marshal(resp)
+// 	if err != nil {
+// 		return nil, err
+// 	}
+// 	metrics.ResponseStatus(metricsPayloadStatusPrefix, status)
+// 	return respEnc, nil
+// }
 
-// Handle attempts to parse the application payload as a protobuf-based HTTP request and, if successful,
-// translates the result into an equivalent http.Request object to be processed by the handler's HttpRequestHandler.
-// The http.Response result from the handler is then translated back into an equivalent protobuf-based HTTP
-// response and returned to the caller.
-func (h ProtoHTTPAppHandler) Handle(binaryRequest []byte, metrics Metrics) ([]byte, error) {
-	req := &Request{}
-	if err := proto.Unmarshal(binaryRequest, req); err != nil {
-		metrics.Fire(metricsResultContentDecodingFailed)
-		return h.wrappedError(ErrPayloadMarshalling, metrics)
-	}
+// // Handle attempts to parse the application payload as a protobuf-based HTTP request and, if successful,
+// // translates the result into an equivalent http.Request object to be processed by the handler's HttpRequestHandler.
+// // The http.Response result from the handler is then translated back into an equivalent protobuf-based HTTP
+// // response and returned to the caller.
+// func (h ProtoHTTPAppHandler) Handle(binaryRequest []byte, metrics Metrics) ([]byte, error) {
+// 	req := &Request{}
+// 	if err := proto.Unmarshal(binaryRequest, req); err != nil {
+// 		metrics.Fire(metricsResultContentDecodingFailed)
+// 		return h.wrappedError(ErrPayloadMarshalling, metrics)
+// 	}
 
-	httpRequest, err := protoHTTPToRequest(req)
-	if err != nil {
-		metrics.Fire(metricsResultRequestTranslationFailed)
-		return h.wrappedError(ErrPayloadMarshalling, metrics)
-	}
+// 	httpRequest, err := protoHTTPToRequest(req)
+// 	if err != nil {
+// 		metrics.Fire(metricsResultRequestTranslationFailed)
+// 		return h.wrappedError(ErrPayloadMarshalling, metrics)
+// 	}
 
-	httpResponse, err := h.httpHandler.Handle(httpRequest, metrics)
-	if err != nil {
-		if err == ErrGatewayTargetForbidden {
-			// Return 403 (Forbidden) in the event the client request was for a
-			// Target not on the allow list
-			return h.wrappedError(ErrGatewayTargetForbidden, metrics)
-		}
-		return h.wrappedError(ErrGatewayInternalServer, metrics)
-	}
+// 	httpResponse, err := h.httpHandler.Handle(httpRequest, metrics)
+// 	if err != nil {
+// 		if err == ErrGatewayTargetForbidden {
+// 			// Return 403 (Forbidden) in the event the client request was for a
+// 			// Target not on the allow list
+// 			return h.wrappedError(ErrGatewayTargetForbidden, metrics)
+// 		}
+// 		return h.wrappedError(ErrGatewayInternalServer, metrics)
+// 	}
 
-	protoResponse, err := responseToProtoHTTP(httpResponse)
-	if err != nil {
-		metrics.Fire(metricsResultResponseTranslationFailed)
-		return h.wrappedError(ErrPayloadMarshalling, metrics)
-	}
+// 	protoResponse, err := responseToProtoHTTP(httpResponse)
+// 	if err != nil {
+// 		metrics.Fire(metricsResultResponseTranslationFailed)
+// 		return h.wrappedError(ErrPayloadMarshalling, metrics)
+// 	}
 
-	marshalledProtoResponse, err := proto.Marshal(protoResponse)
-	if err != nil {
-		metrics.Fire(metricsResultContentEncodingFailed)
-		return h.wrappedError(ErrPayloadMarshalling, metrics)
-	}
-	metrics.Fire(metricsPayloadStatusPrefix + "200")
-	return marshalledProtoResponse, nil
-}
+// 	marshalledProtoResponse, err := proto.Marshal(protoResponse)
+// 	if err != nil {
+// 		metrics.Fire(metricsResultContentEncodingFailed)
+// 		return h.wrappedError(ErrPayloadMarshalling, metrics)
+// 	}
+// 	metrics.Fire(metricsPayloadStatusPrefix + "200")
+// 	return marshalledProtoResponse, nil
+// }
 
 // BinaryHTTPAppHandler is an AppContentHandler that parses the application request as
 // a binary HTTP request for resolution with an HttpRequestHandler.
@@ -245,26 +243,27 @@ type BinaryHTTPAppHandler struct {
 	httpHandler HttpRequestHandler
 }
 
-func (h BinaryHTTPAppHandler) wrappedError(e error, metrics Metrics) ([]byte, error) {
-	status := payloadErrorToPayloadStatusCode(e)
-	resp := &http.Response{
-		StatusCode: status,
-		Body:       io.NopCloser(bytes.NewBufferString(e.Error())),
-	}
-	binaryResponse := ohttp.CreateBinaryResponse(resp)
-	metrics.Fire(metricsPayloadStatusPrefix + strconv.Itoa(status))
-	return binaryResponse.Marshal()
-}
+// func (h BinaryHTTPAppHandler) wrappedError(e error, metrics Metrics) ([]byte, error) {
+// 	status := payloadErrorToPayloadStatusCode(e)
+// 	resp := &http.Response{
+// 		StatusCode: status,
+// 		Body:       io.NopCloser(bytes.NewBufferString(e.Error())),
+// 	}
+// 	binaryResponse := ohttp.CreateBinaryResponse(resp)
+// 	metrics.Fire(metricsPayloadStatusPrefix + strconv.Itoa(status))
+// 	return binaryResponse.Marshal()
+// }
 
 // Handle attempts to parse the application payload as a binary HTTP request and, if successful,
 // translates the result into an equivalent http.Request object to be processed by the handler's HttpRequestHandler.
 // The http.Response result from the handler is then translated back into an equivalent binary HTTP
 // response and returned to the caller.
-func (h BinaryHTTPAppHandler) Handle(binaryRequest []byte, metrics Metrics) ([]byte, error) {
+func (h BinaryHTTPAppHandler) Handle(e *EncapsulatedChunkWriter, binaryRequest []byte, metrics Metrics) error {
 	req, err := ohttp.UnmarshalBinaryRequest(binaryRequest)
 	if err != nil {
 		metrics.Fire(metricsResultContentDecodingFailed)
-		return h.wrappedError(ErrPayloadMarshalling, metrics)
+		// return h.wrappedError(ErrPayloadMarshalling, metrics)
+		return ErrPayloadMarshalling
 	}
 
 	resp, err := h.httpHandler.Handle(req, metrics)
@@ -272,20 +271,22 @@ func (h BinaryHTTPAppHandler) Handle(binaryRequest []byte, metrics Metrics) ([]b
 		if err == ErrGatewayTargetForbidden {
 			// Return 403 (Forbidden) in the event the client request was for a
 			// Target not on the allow list
-			return h.wrappedError(ErrGatewayTargetForbidden, metrics)
+			// return h.wrappedError(ErrGatewayTargetForbidden,
+			// metrics)
+			return ErrGatewayTargetForbidden
 		}
-		return h.wrappedError(ErrGatewayInternalServer, metrics)
+		// return h.wrappedError(ErrGatewayInternalServer, metrics)
+		return ErrGatewayInternalServer
 	}
 
-	binaryResp := ohttp.CreateBinaryResponse(resp)
-	binaryRespEnc, err := binaryResp.Marshal()
-	if err != nil {
+	if err := NewBinaryResponseEncoder(e).Encode(resp); err != nil {
 		metrics.Fire(metricsResultContentEncodingFailed)
-		return h.wrappedError(ErrPayloadMarshalling, metrics)
+		// return h.wrappedError(ErrPayloadMarshalling, metrics)
+		return ErrPayloadMarshalling
 	}
 
 	metrics.Fire(metricsPayloadStatusPrefix + "200")
-	return binaryRespEnc, nil
+	return nil
 }
 
 // HttpRequestHandler handles HTTP requests to produce responses.
@@ -325,4 +326,39 @@ func (h FilteredHttpRequestHandler) Handle(req *http.Request, metrics Metrics) (
 
 	metrics.Fire(metricsResultSuccess)
 	return resp, nil
+}
+
+type EncapsulatedChunkWriter struct {
+	w io.Writer
+}
+
+func NewEncapsulatedChunkWriter(w io.Writer) *EncapsulatedChunkWriter {
+	return &EncapsulatedChunkWriter{
+		w: w,
+	}
+}
+
+func (e *EncapsulatedChunkWriter) Write(b []byte) (int, error) {
+	return e.w.Write(b)
+}
+
+func (e *EncapsulatedChunkWriter) Close() error {
+	return nil
+}
+
+type BinaryResponseEncoder struct {
+	w         io.Writer
+	ChunkSize int
+}
+
+func NewBinaryResponseEncoder(w io.Writer) *BinaryResponseEncoder {
+	return &BinaryResponseEncoder{
+		w:         w,
+		ChunkSize: 32 << 10,
+	}
+}
+
+func (e *BinaryResponseEncoder) Encode(res *http.Response) error {
+	bres := ohttp.CreateBinaryResponse(res)
+	return bres.Write(e.w)
 }
